@@ -1,6 +1,6 @@
 flask>=2.0
 birdnetlib>=0.18.0
-tensorflow-lite-runtime
+tflite-runtime
 ffmpeg-python
 librosa
 flask-cors
