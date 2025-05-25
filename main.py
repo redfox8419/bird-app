@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import tempfile, os
 from datetime import datetime
 
@@ -7,6 +8,7 @@ from birdnetlib.analyzer import Analyzer
 from birdnetlib import Recording
 
 app = Flask(__name__)
++CORS(app)
 
 # Load the Analyzer once at startup
 analyzer = Analyzer()
