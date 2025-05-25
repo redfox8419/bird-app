@@ -1,0 +1,5 @@
+flask>=2.0
+birdnetlib>=0.18.0
+tensorflow>=2.11.0
+ffmpeg-python
+librosa

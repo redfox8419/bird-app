@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2d5016">
+    <title>BirdSong - Real BirdNET Implementation</title>
+    
+    <!-- Optional: TensorFlow.js scripts can remain but are unused in server approach -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@latest/dist/tf-tflite.min.js"></script>
+
+    <style>
+        /* ... (same CSS as before) ... */
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+    <header>
+        <h1><span class="logo">🐦</span> BirdSong - Real BirdNET AI (Server Mode)</h1>
+        <p>Powered by Cornell's BirdNET Neural Network via Server</p>
+    </header>
+    <div class="container">
+        <div class="model-status loading" id="modelStatus">
+            <div class="spinner"></div>
+            <h3>Initializing Server Connection...</h3>
+            <p>Preparing to send audio snippets to BirdNET Analyzer</p>
+        </div>
+        <div class="record-section">
+            <h2>🎤 BirdNET Neural Network Analysis</h2>
+            <p>Record bird sounds for real-time species identification. Audio is sent to server for analysis.</p>
+            <div id="recordingInfo" style="margin: 1rem 0; font-size: 0.9rem; opacity: 0.8;"></div>
+            <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+                <span id="recordText">🎙️ Start Recording (Server Mode)</span>
+            </button>
+            <div class="audio-visualization" id="audioVisualization">
+                <canvas class="waveform" id="waveformCanvas"></canvas>
+            </div>
+        </div>
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        // Server endpoint
+        const SERVER_URL = 'https://<your-render-url>.onrender.com';
+
+        // Recording state
+        let mediaRecorder = null;
+        let audioContext = null;
+        let analyser = null;
+        let isRecording = false;
+        let audioChunks = [];
+        let animationId = null;
+        let recordingStartTime = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateStatus('loading', 'Ready to record', 'Press Start to capture audio and send to server.');
+            enableRecording();
+        });
+
+        function updateStatus(type, title, subtitle) {
+            const statusEl = document.getElementById('modelStatus');
+            statusEl.className = `model-status ${type}`;
+            statusEl.innerHTML = `
+                ${type === 'loading' ? '<div class="spinner"></div>' : ''}
+                <h3>${title}</h3>
+                <p>${subtitle}</p>
+            `;
+        }
+
+        function enableRecording() {
+            const btn = document.getElementById('recordBtn');
+            btn.classList.add('enabled');
+        }
+
+        async function toggleRecording() {
+            const btn = document.getElementById('recordBtn');
+            const recordText = document.getElementById('recordText');
+            const visualization = document.getElementById('audioVisualization');
+
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    setupAudioContext(stream);
+                    setupMediaRecorder(stream);
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordingStartTime = Date.now();
+                    btn.classList.add('recording');
+                    recordText.textContent = '⏹️ Stop Recording';
+                    visualization.classList.add('show');
+                    startVisualization();
+                    updateRecordingInfo();
+                } catch (err) {
+                    alert('Microphone access is required');
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.classList.remove('recording');
+                recordText.textContent = '🎙️ Start Recording (Server Mode)';
+                visualization.classList.remove('show');
+                cancelAnimationFrame(animationId);
+                document.getElementById('recordingInfo').textContent = '';
+            }
+        }
+
+        function setupAudioContext(stream) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 2048;
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+        }
+
+        function setupMediaRecorder(stream) {
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+            audioChunks = [];
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = async () => {
+                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                await sendToServer(blob);
+                stream.getTracks().forEach(t => t.stop());
+                audioContext.close();
+            };
+        }
+
+        function startVisualization() {
+            const canvas = document.getElementById('waveformCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            function draw() {
+                if (!isRecording) return;
+                const data = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(data);
+                ctx.fillStyle = 'rgba(255,255,255,0.1)';
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.beginPath();
+                const slice = canvas.width / data.length;
+                data.forEach((v,i) => {
+                    const y = (v/255) * canvas.height;
+                    if (i === 0) ctx.moveTo(0,y);
+                    else ctx.lineTo(i*slice,y);
+                });
+                ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                ctx.stroke();
+                animationId = requestAnimationFrame(draw);
+            }
+            draw();
+        }
+
+        function updateRecordingInfo() {
+            if (!isRecording) return;
+            const secs = ((Date.now() - recordingStartTime)/1000).toFixed(1);
+            document.getElementById('recordingInfo').textContent = `🔴 Recording: ${secs}s`;
+            setTimeout(updateRecordingInfo, 100);
+        }
+
+        async function sendToServer(audioBlob) {
+            updateStatus('loading', 'Sending audio…', 'Waiting for server response');
+            const form = new FormData();
+            form.append('audio', audioBlob, 'clip.webm');
+            form.append('min_conf', '0.25');
+            try {
+                const res = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', body: form });
+                if (!res.ok) throw new Error(res.statusText);
+                const detections = await res.json();
+                displayDetections(detections);
+                updateStatus('ready', 'Detection Complete', `Found ${detections.length} species`);
+            } catch (err) {
+                updateStatus('error', 'Server Error', err.message);
+            }
+        }
+
+        function displayDetections(dets) {
+            const el = document.getElementById('results');
+            if (!dets.length) {
+                el.innerHTML = `<div class="bird-detection"><h3>No Birds Detected</h3></div>`;
+                return;
+            }
+            el.innerHTML = dets.map(d => {
+                const pct = (d.confidence*100).toFixed(1);
+                return `
+                <div class="bird-detection">
+                    <h3>${d.common_name}</h3>
+                    <div class="bird-scientific">${d.scientific_name}</div>
+                    <div class="confidence-bar"><div class="confidence-fill" style="width:${pct}%"></div></div>
+                    <div>Confidence: ${pct}%</div>
+                    <div class="time-segment">${d.start_time.toFixed(1)}s - ${d.end_time.toFixed(1)}s</div>
+                </div>`;
+            }).join('');
+        }
+    </script>
+</body>
+</html>

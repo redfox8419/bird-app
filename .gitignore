@@ -1,0 +1,17 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Node (if you have one)
+node_modules/
+
+# Logs
+*.log
+
+# IDE/editor
+.vscode/
+.idea/
